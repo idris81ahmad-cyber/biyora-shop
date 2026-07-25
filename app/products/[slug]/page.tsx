@@ -13,7 +13,7 @@ import RecentlyViewed from "@/components/RecentlyViewed";
 import { addToCartWithFeedback } from "@/lib/add-to-cart";
 import { addRecentlyViewed } from "@/lib/recently-viewed";
 import { getSmartRelatedProducts, relatedReason } from "@/lib/related-products";
-import { hydrateProduct } from "@/lib/product-education";
+import { formatOccasion, hydrateProduct } from "@/lib/product-education";
 import ProductReviews from "@/components/ProductReviews";
 import ProductEducation from "@/components/ProductEducation";
 import FabricCalculatorCta from "@/components/FabricCalculatorCta";
@@ -209,13 +209,31 @@ function ProductDetailClient({ product, relatedProducts }: { product: Product; r
             </button>
           </div>
 
-          <p className="text-lg text-[#4A4038] leading-relaxed mb-8">{product.shortDescription}</p>
+          <p className="text-lg text-[#4A4038] leading-relaxed mb-6">{product.shortDescription}</p>
 
-          <div className="prose prose-stone max-w-none mb-10 text-[15px] leading-relaxed text-[#4A4038]">
+          {/* At-a-glance chips — scannable before full education block */}
+          {(product.bestUses?.length || product.opacity) && (
+            <div className="flex flex-wrap gap-2 mb-8">
+              {product.opacity && (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-[#E8DFD0] bg-[#FBF8F3] px-3 py-1.5 text-xs font-medium text-[#2C2522]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#C5A46E]" aria-hidden="true" />
+                  {product.opacity}
+                </span>
+              )}
+              {(product.bestUses || []).slice(0, 4).map((use) => (
+                <span
+                  key={use}
+                  className="inline-flex items-center rounded-full border border-[#E8DFD0] bg-white px-3 py-1.5 text-xs font-medium text-[#4A4038]"
+                >
+                  {formatOccasion(use)}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div className="prose prose-stone max-w-none mb-8 text-[15px] leading-relaxed text-[#4A4038]">
             <p>{product.description}</p>
           </div>
-
-          <ProductEducation product={product} />
 
           <div className="flex flex-wrap items-center gap-3 text-sm text-[#6B5F54] mb-4">
             <StockBadge inStock={product.inStock} alwaysShow />
@@ -231,6 +249,11 @@ function ProductDetailClient({ product, relatedProducts }: { product: Product; r
             <ShareFabric name={product.name} slug={product.slug} />
           </div>
         </div>
+      </div>
+
+      {/* Full-width education: care, opacity, origin, uses — premium scannable layout */}
+      <div className="mt-14 lg:mt-16">
+        <ProductEducation product={product} />
       </div>
 
       <AnimatePresence>
