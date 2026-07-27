@@ -5,6 +5,7 @@ import QuickViewModal from "@/components/QuickViewModal";
 import AddToCartFly from "@/components/AddToCartFly";
 import MobileNav from "@/components/MobileNav";
 import WhatsAppButton from "@/components/WhatsAppButton";
+import VoiceSupportButton from "@/components/VoiceSupportButton";
 
 export default function UXProviders() {
   return (
@@ -14,6 +15,7 @@ export default function UXProviders() {
       <AddToCartFly />
       <MobileNav />
       <WhatsAppButton />
+      <VoiceSupportButton />
     </>
   );
 }
