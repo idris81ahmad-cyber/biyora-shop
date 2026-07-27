@@ -68,7 +68,7 @@ export default function VoiceSupportButton() {
     isPlayingRef.current = true;
     const chunk = playbackQueueRef.current.shift()!;
     const buffer = ctx.createBuffer(1, chunk.length, 24000);
-    buffer.copyToChannel(chunk, 0);
+    buffer.copyToChannel(Float32Array.from(chunk), 0);
 
     const source = ctx.createBufferSource();
     source.buffer = buffer;
