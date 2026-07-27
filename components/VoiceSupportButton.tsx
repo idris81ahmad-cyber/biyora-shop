@@ -28,6 +28,8 @@ export default function VoiceSupportButton() {
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const playbackQueueRef = useRef<Float32Array[]>([]);
   const isPlayingRef = useRef(false);
+  const stateRef = useRef<ConnectionState>("idle");
+  stateRef.current = state;
 
   const cleanup = useCallback(() => {
     if (processorRef.current) {
@@ -228,7 +230,7 @@ export default function VoiceSupportButton() {
       };
 
       ws.onclose = () => {
-        if (state === "live") {
+        if (stateRef.current === "live" || stateRef.current === "connecting") {
           toast.message("Voice session ended");
         }
         cleanup();
