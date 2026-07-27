@@ -86,13 +86,40 @@ export async function POST(req: NextRequest) {
     >;
 
     if (!xaiRes.ok) {
+      const xaiError =
+        (typeof raw.error === "string" && raw.error) ||
+        (typeof raw.message === "string" && raw.message) ||
+        (raw.error &&
+        typeof raw.error === "object" &&
+        typeof (raw.error as { message?: string }).message === "string"
+          ? (raw.error as { message: string }).message
+          : null) ||
+        null;
+
       logger.error("voice", "xAI client_secrets failed", {
         status: xaiRes.status,
         error: raw.error ?? raw.message ?? raw,
       });
+
+      const invalidKey =
+        xaiRes.status === 400 ||
+        xaiRes.status === 401 ||
+        xaiRes.status === 403 ||
+        (xaiError && /incorrect api key|invalid api key|unauthorized/i.test(xaiError));
+
       return NextResponse.json(
-        { error: "Could not start voice session", code: "xai_client_secret_failed" },
-        { status: 502, headers: rateLimitHeaders(rl) },
+        {
+          error: invalidKey
+            ? "Voice API key is invalid. Set a real XAI_API_KEY from console.x.ai in Vercel env, then redeploy."
+            : "Could not start voice session. Please try again in a moment.",
+          code: invalidKey ? "invalid_api_key" : "xai_client_secret_failed",
+          // Safe debug hint — never the key itself
+          hint: invalidKey
+            ? "Keys usually look like xai-… (not a UUID). Create one under console.x.ai → API Keys."
+            : undefined,
+          xaiStatus: xaiRes.status,
+        },
+        { status: invalidKey ? 503 : 502, headers: rateLimitHeaders(rl) },
       );
     }
 

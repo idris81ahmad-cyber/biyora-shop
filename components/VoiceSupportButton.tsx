@@ -21,6 +21,8 @@ export default function VoiceSupportButton() {
   const [state, setState] = useState<ConnectionState>("idle");
   const [transcript, setTranscript] = useState("");
   const [isMuted, setIsMuted] = useState(false);
+  const isMutedRef = useRef(false);
+  isMutedRef.current = isMuted;
 
   const wsRef = useRef<WebSocket | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -91,109 +93,160 @@ export default function VoiceSupportButton() {
     try {
       // 1. Get short-lived client secret from our secure API route
       const secretRes = await fetch("/api/voice/client-secret", { method: "POST" });
+      const secretPayload = (await secretRes.json().catch(() => ({}))) as {
+        error?: string;
+        hint?: string;
+        code?: string;
+        client_secret?: string;
+        agent_id?: string | null;
+        realtimeUrl?: string;
+        protocol?: string;
+      };
       if (!secretRes.ok) {
-        const err = await secretRes.json().catch(() => ({}));
-        throw new Error(err.error || "Could not start voice session");
+        const msg = [secretPayload.error, secretPayload.hint].filter(Boolean).join(" ");
+        throw new Error(msg || "Could not start voice session");
       }
-      const { client_secret, agent_id } = await secretRes.json();
+      const client_secret = secretPayload.client_secret;
+      if (!client_secret) {
+        throw new Error("Voice session token missing — check XAI_API_KEY on the server");
+      }
+      const agent_id = secretPayload.agent_id;
 
       // 2. Open WebSocket to xAI (browser-safe auth via protocol header)
       const model = "grok-voice-latest";
-      const url = agent_id
-        ? `wss://api.x.ai/v1/realtime?agent_id=${encodeURIComponent(agent_id)}`
-        : `wss://api.x.ai/v1/realtime?model=${model}`;
+      const url =
+        secretPayload.realtimeUrl ||
+        (agent_id
+          ? `wss://api.x.ai/v1/realtime?agent_id=${encodeURIComponent(agent_id)}`
+          : `wss://api.x.ai/v1/realtime?model=${model}`);
 
-      const ws = new WebSocket(url, [`xai-client-secret.${client_secret}`]);
+      const protocol =
+        secretPayload.protocol || `xai-client-secret.${client_secret}`;
+      const ws = new WebSocket(url, [protocol]);
       wsRef.current = ws;
 
+      let opened = false;
+      const openTimeout = window.setTimeout(() => {
+        if (!opened && ws.readyState !== WebSocket.OPEN) {
+          toast.error(
+            "Could not reach Grok Voice. Check network / that XAI_API_KEY is a valid console.x.ai key.",
+          );
+          setState("error");
+          cleanup();
+        }
+      }, 12_000);
+
       ws.onopen = async () => {
-        // Configure the session for BIYORA support
-        ws.send(
-          JSON.stringify({
-            type: "session.update",
-            session: {
-              voice: process.env.NEXT_PUBLIC_XAI_VOICE || "eve",
-              instructions: SUPPORT_INSTRUCTIONS,
-              turn_detection: { type: "server_vad" },
-              audio: {
-                input: { format: { type: "audio/pcm", rate: 24000 } },
-                output: { format: { type: "audio/pcm", rate: 24000 } },
-              },
-            },
-          }),
-        );
-
-        // Greet the customer
-        ws.send(
-          JSON.stringify({
-            type: "conversation.item.create",
-            item: {
-              type: "message",
-              role: "user",
-              content: [
-                {
-                  type: "input_text",
-                  text: "Hello, I need help with BIYORA SHOP.",
-                },
-              ],
-            },
-          }),
-        );
-        ws.send(JSON.stringify({ type: "response.create" }));
-
-        // 3. Start microphone
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            sampleRate: 24000,
-            channelCount: 1,
-            echoCancellation: true,
-            noiseSuppression: true,
-          },
-        });
-        mediaStreamRef.current = stream;
-
-        const ctx = new AudioContext({ sampleRate: 24000 });
-        audioContextRef.current = ctx;
-
-        const source = ctx.createMediaStreamSource(stream);
-        // ScriptProcessor is deprecated but still the most compatible for PCM16 streaming
-        const processor = ctx.createScriptProcessor(4096, 1, 1);
-        processorRef.current = processor;
-
-        processor.onaudioprocess = (e) => {
-          if (isMuted || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-
-          const input = e.inputBuffer.getChannelData(0);
-          // Convert float32 [-1,1] → int16 PCM
-          const pcm = new Int16Array(input.length);
-          for (let i = 0; i < input.length; i++) {
-            const s = Math.max(-1, Math.min(1, input[i]));
-            pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-          }
-
-          // Base64 encode and send
-          const bytes = new Uint8Array(pcm.buffer);
-          let binary = "";
-          for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-          const base64 = btoa(binary);
-
+        opened = true;
+        window.clearTimeout(openTimeout);
+        try {
+          // Configure the session for BIYORA support
           ws.send(
             JSON.stringify({
-              type: "input_audio_buffer.append",
-              audio: base64,
+              type: "session.update",
+              session: {
+                voice: process.env.NEXT_PUBLIC_XAI_VOICE || "eve",
+                instructions: SUPPORT_INSTRUCTIONS,
+                turn_detection: { type: "server_vad" },
+                audio: {
+                  input: { format: { type: "audio/pcm", rate: 24000 } },
+                  output: { format: { type: "audio/pcm", rate: 24000 } },
+                },
+              },
             }),
           );
-        };
 
-        source.connect(processor);
-        // ScriptProcessor must stay in the graph; mute to avoid mic→speaker feedback
-        const mute = ctx.createGain();
-        mute.gain.value = 0;
-        processor.connect(mute);
-        mute.connect(ctx.destination);
+          // Greet the customer
+          ws.send(
+            JSON.stringify({
+              type: "conversation.item.create",
+              item: {
+                type: "message",
+                role: "user",
+                content: [
+                  {
+                    type: "input_text",
+                    text: "Hello, I need help with BIYORA SHOP.",
+                  },
+                ],
+              },
+            }),
+          );
+          ws.send(JSON.stringify({ type: "response.create" }));
 
-        setState("live");
-        toast.success("Grok Voice connected — speak now");
+          // 3. Start microphone (after WS is open so first audio isn't dropped)
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              channelCount: 1,
+              echoCancellation: true,
+              noiseSuppression: true,
+            },
+          });
+          mediaStreamRef.current = stream;
+
+          const ctx = new AudioContext({ sampleRate: 24000 });
+          if (ctx.state === "suspended") await ctx.resume();
+          audioContextRef.current = ctx;
+
+          const source = ctx.createMediaStreamSource(stream);
+          // ScriptProcessor is deprecated but still the most compatible for PCM16 streaming
+          const processor = ctx.createScriptProcessor(4096, 1, 1);
+          processorRef.current = processor;
+          processor.onaudioprocess = (e) => {
+            if (
+              isMutedRef.current ||
+              !wsRef.current ||
+              wsRef.current.readyState !== WebSocket.OPEN
+            ) {
+              return;
+            }
+
+            const input = e.inputBuffer.getChannelData(0);
+            // Convert float32 [-1,1] → int16 PCM
+            const pcm = new Int16Array(input.length);
+            for (let i = 0; i < input.length; i++) {
+              const s = Math.max(-1, Math.min(1, input[i]!));
+              pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+            }
+
+            // Base64 encode and send
+            const bytes = new Uint8Array(pcm.buffer);
+            let binary = "";
+            const chunk = 0x8000;
+            for (let i = 0; i < bytes.length; i += chunk) {
+              binary += String.fromCharCode(
+                ...bytes.subarray(i, Math.min(i + chunk, bytes.length)),
+              );
+            }
+            const base64 = btoa(binary);
+
+            ws.send(
+              JSON.stringify({
+                type: "input_audio_buffer.append",
+                audio: base64,
+              }),
+            );
+          };
+
+          source.connect(processor);
+          // ScriptProcessor must stay in the graph; mute to avoid mic→speaker feedback
+          const gain = ctx.createGain();
+          gain.gain.value = 0;
+          processor.connect(gain);
+          gain.connect(ctx.destination);
+
+          setState("live");
+          toast.success("Grok Voice connected — speak now");
+        } catch (inner) {
+          console.error(inner);
+          toast.error(
+            inner instanceof Error
+              ? inner.message
+              : "Microphone permission is required for voice",
+          );
+          setState("error");
+          cleanup();
+        }
       };
 
       ws.onmessage = (event) => {
@@ -202,7 +255,11 @@ export default function VoiceSupportButton() {
 
           if (msg.type === "response.output_audio_transcript.delta") {
             setTranscript((prev) => prev + (msg.delta || ""));
-          } else if (msg.type === "response.output_audio.delta" && msg.delta) {
+          } else if (
+            (msg.type === "response.output_audio.delta" ||
+              msg.type === "response.audio.delta") &&
+            msg.delta
+          ) {
             // Decode base64 PCM16 → Float32 and queue for playback
             const binary = atob(msg.delta);
             const bytes = new Uint8Array(binary.length);
@@ -210,13 +267,17 @@ export default function VoiceSupportButton() {
             const pcm16 = new Int16Array(bytes.buffer);
             const float32 = new Float32Array(pcm16.length);
             for (let i = 0; i < pcm16.length; i++) {
-              float32[i] = pcm16[i] / (pcm16[i] < 0 ? 0x8000 : 0x7fff);
+              float32[i] = pcm16[i]! / 32768;
             }
             playbackQueueRef.current.push(float32);
             playNextChunk();
           } else if (msg.type === "error") {
             console.error("xAI realtime error", msg);
-            toast.error(msg.error?.message || "Voice error");
+            const errMsg =
+              msg.error?.message ||
+              (typeof msg.error === "string" ? msg.error : null) ||
+              "Voice error";
+            toast.error(errMsg);
           }
         } catch {
           /* ignore parse errors */
@@ -224,12 +285,18 @@ export default function VoiceSupportButton() {
       };
 
       ws.onerror = () => {
-        toast.error("Voice connection error");
+        window.clearTimeout(openTimeout);
+        if (!opened) {
+          toast.error("Voice connection failed — invalid key or network issue");
+        } else {
+          toast.error("Voice connection error");
+        }
         setState("error");
         cleanup();
       };
 
       ws.onclose = () => {
+        window.clearTimeout(openTimeout);
         if (stateRef.current === "live" || stateRef.current === "connecting") {
           toast.message("Voice session ended");
         }
