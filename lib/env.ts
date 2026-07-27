@@ -83,12 +83,16 @@ export function getEnvReport(): EnvReport {
   if (!present("BLOB_READ_WRITE_TOKEN")) {
     missingOptional.push("BLOB_READ_WRITE_TOKEN");
   }
+  if (!present("XAI_API_KEY")) {
+    missingOptional.push("XAI_API_KEY");
+  } else if (!present("XAI_AGENT_ID") && !present("XAI_VOICE_MODEL")) {
+    warnings.push(
+      "XAI_API_KEY set but XAI_AGENT_ID (or XAI_VOICE_MODEL) missing — voice will use grok-voice-latest",
+    );
+  }
   if (!present("NEXTAUTH_URL") && process.env.NODE_ENV === "production") {
     missingOptional.push("NEXTAUTH_URL");
     warnings.push("NEXTAUTH_URL should be set in production for correct auth callbacks");
-  }
-  if (!present("XAI_API_KEY")) {
-    missingOptional.push("XAI_API_KEY");
   }
 
   const pub = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "";
@@ -117,7 +121,7 @@ export function getEnvReport(): EnvReport {
       nextAuth: present("NEXTAUTH_SECRET"),
       email: present("RESEND_API_KEY"),
       blob: present("BLOB_READ_WRITE_TOKEN"),
-      voice: present("XAI_API_KEY"),
+      voice: isVoiceEnvReady(),
     },
   };
 }
@@ -157,6 +161,16 @@ export function isEmailEnvReady(): boolean {
   return present("RESEND_API_KEY");
 }
 
+/** Grok Voice: server mints ephemeral client secrets with XAI_API_KEY only. */
 export function isVoiceEnvReady(): boolean {
   return present("XAI_API_KEY");
+}
+
+export function getXaiAgentId(): string | null {
+  const id = process.env.XAI_AGENT_ID?.trim();
+  return id || null;
+}
+
+export function getXaiVoiceModel(): string {
+  return process.env.XAI_VOICE_MODEL?.trim() || "grok-voice-latest";
 }

@@ -113,8 +113,10 @@ export default function VoiceSupportButton() {
               voice: process.env.NEXT_PUBLIC_XAI_VOICE || "eve",
               instructions: SUPPORT_INSTRUCTIONS,
               turn_detection: { type: "server_vad" },
-              input_audio_format: "pcm16",
-              output_audio_format: "pcm16",
+              audio: {
+                input: { format: { type: "audio/pcm", rate: 24000 } },
+                output: { format: { type: "audio/pcm", rate: 24000 } },
+              },
             },
           }),
         );
@@ -182,7 +184,11 @@ export default function VoiceSupportButton() {
         };
 
         source.connect(processor);
-        processor.connect(ctx.destination); // needed for the processor to run
+        // ScriptProcessor must stay in the graph; mute to avoid mic→speaker feedback
+        const mute = ctx.createGain();
+        mute.gain.value = 0;
+        processor.connect(mute);
+        mute.connect(ctx.destination);
 
         setState("live");
         toast.success("Grok Voice connected — speak now");

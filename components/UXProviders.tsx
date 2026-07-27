@@ -14,8 +14,8 @@ export default function UXProviders() {
       <QuickViewModal />
       <AddToCartFly />
       <MobileNav />
-      <WhatsAppButton />
       <VoiceSupportButton />
+      <WhatsAppButton />
     </>
   );
 }
