@@ -16,6 +16,7 @@ export type EnvReport = {
     nextAuth: boolean;
     email: boolean;
     blob: boolean;
+    voice: boolean;
   };
 };
 
@@ -86,6 +87,9 @@ export function getEnvReport(): EnvReport {
     missingOptional.push("NEXTAUTH_URL");
     warnings.push("NEXTAUTH_URL should be set in production for correct auth callbacks");
   }
+  if (!present("XAI_API_KEY")) {
+    missingOptional.push("XAI_API_KEY");
+  }
 
   const pub = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "";
   const sec = process.env.PAYSTACK_SECRET_KEY || "";
@@ -113,6 +117,7 @@ export function getEnvReport(): EnvReport {
       nextAuth: present("NEXTAUTH_SECRET"),
       email: present("RESEND_API_KEY"),
       blob: present("BLOB_READ_WRITE_TOKEN"),
+      voice: present("XAI_API_KEY"),
     },
   };
 }
@@ -150,4 +155,8 @@ export function isDatabaseEnvReady(): boolean {
 
 export function isEmailEnvReady(): boolean {
   return present("RESEND_API_KEY");
+}
+
+export function isVoiceEnvReady(): boolean {
+  return present("XAI_API_KEY");
 }
