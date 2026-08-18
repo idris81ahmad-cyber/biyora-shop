@@ -1,7 +1,10 @@
 /** Nigerian delivery estimates — fee display helpers + ETA copy */
 
 /** Server + client safe shipping fee (must match Paystack initialize). */
-export function getShippingFee(): number {
+export function getShippingFee(subtotal?: number): number {
+  if (typeof subtotal === "number" && Number.isFinite(subtotal) && subtotal >= 75_000) {
+    return 0;
+  }
   if (typeof process !== "undefined") {
     const fromEnv = Number(process.env.SHIPPING_FEE_NGN);
     if (Number.isFinite(fromEnv) && fromEnv >= 0) return Math.round(fromEnv);
