@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Product } from '@/types/product';
 import { toast } from 'sonner';
+import { isLowStock, listingBadge, readCatalogMeta } from '@/lib/catalog-meta';
 
 interface ProductManagerProps {
   initialProducts: Product[];
@@ -129,7 +130,7 @@ export default function ProductManager({
       if (stockStatus === 'in_stock') {
         result = result.filter(p => p.inStock > 0);
       } else if (stockStatus === 'low_stock') {
-        result = result.filter(p => p.inStock > 0 && p.inStock <= 10);
+        result = result.filter((p) => isLowStock(p));
       } else if (stockStatus === 'out_of_stock') {
         result = result.filter(p => p.inStock === 0);
       }
@@ -465,9 +466,10 @@ export default function ProductManager({
   };
 
   // Helper to get stock status label and color
-  const getStockStatus = (stock: number) => {
-    if (stock === 0) return { label: 'Out', color: 'text-red-600 bg-red-50 border-red-200' };
-    if (stock <= 10) return { label: 'Low', color: 'text-amber-600 bg-amber-50 border-amber-200' };
+  const getStockStatus = (product: Product) => {
+    const limit = readCatalogMeta(product).lowStockThreshold;
+    if (product.inStock === 0) return { label: 'Out', color: 'text-red-600 bg-red-50 border-red-200' };
+    if (product.inStock <= limit) return { label: 'Low', color: 'text-amber-600 bg-amber-50 border-amber-200' };
     return { label: 'Good', color: 'text-emerald-600 bg-emerald-50 border-emerald-200' };
   };
 
@@ -826,8 +828,9 @@ export default function ProductManager({
                 </tr>
               )}
               {displayedProducts.map((product) => {
-                const stockInfo = getStockStatus(product.inStock);
+                const stockInfo = getStockStatus(product);
                 const checked = isSelected(product.id);
+                const badge = listingBadge(product);
 
                 return (
                   <tr key={product.id} className="hover:bg-[#F8F4EC] active:bg-[#F1EDE4] transition-colors">
@@ -841,7 +844,10 @@ export default function ProductManager({
                     </td>
                     <td className="p-3 md:p-4 sticky left-10 bg-white z-10 min-w-[180px]">
                       <div className="font-medium leading-tight">{product.name}</div>
-                      <div className="text-[10px] md:text-xs text-[#6B5F54] mt-0.5 truncate">{product.slug}</div>
+                      <div className="text-[10px] md:text-xs text-[#6B5F54] mt-0.5 truncate">
+                        {product.slug}
+                        {badge ? ` · ${badge}` : ""}
+                      </div>
                     </td>
                     <td className="p-3 md:p-4 text-sm text-[#6B5F54] hidden md:table-cell">{product.category}</td>
                     <td className="p-3 md:p-4 text-right font-medium whitespace-nowrap">

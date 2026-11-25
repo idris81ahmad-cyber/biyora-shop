@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { getProducts } from "@/lib/products-store";
 import { absoluteUrl, siteConfig } from "@/lib/site";
 import { ProductJsonLd, BreadcrumbJsonLd } from "@/components/seo/JsonLd";
+import { isPublicListing, readCatalogMeta } from "@/lib/catalog-meta";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,7 @@ export async function generateMetadata({
   const products = await getProducts();
   const product = products.find((p) => p.slug === slug);
 
-  if (!product) {
+  if (!product || !isPublicListing(product)) {
     return {
       title: "Product Not Found",
       description: "This fabric is no longer available in the BIYORA SHOP catalog.",
@@ -27,10 +28,11 @@ export async function generateMetadata({
     };
   }
 
+  const meta = readCatalogMeta(product);
   const price = product.salePrice ?? product.price;
   const inStock = product.inStock > 0;
-  const title = `${product.name} · ${product.category}`;
-  const description = [
+  const title = meta.seoTitle || `${product.name} · ${product.category}`;
+  const description = (meta.seoDescription || [
     product.shortDescription?.trim(),
     `₦${price.toLocaleString()}`,
     product.colorFamily ? `${product.colorFamily}` : null,
@@ -39,7 +41,7 @@ export async function generateMetadata({
     "Premium African textile from Kantin Kwari Market, Kano — BIYORA SHOP.",
   ]
     .filter(Boolean)
-    .join(" · ")
+    .join(" · "))
     .slice(0, 300);
 
   const imagePath = product.images[0] ?? siteConfig.ogImage;

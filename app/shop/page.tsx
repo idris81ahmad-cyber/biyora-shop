@@ -10,6 +10,7 @@ import type { Product } from "@/types/product";
 import { useWishlistStore } from "@/lib/wishlist-store";
 import { Filter, X, Heart, ShoppingBag } from "lucide-react";
 import EmptyState from "@/components/EmptyState";
+import { readCatalogMeta } from "@/lib/catalog-meta";
 
 const PRICE_MAX = 60000;
 
@@ -106,6 +107,14 @@ function ShopContent() {
       result.sort((a, b) => (b.salePrice || b.price) - (a.salePrice || a.price));
     } else if (sortBy === "rating") {
       result.sort((a, b) => b.rating - a.rating);
+    } else {
+      result.sort((a, b) => {
+        const score = (p: Product) => {
+          const meta = readCatalogMeta(p);
+          return (meta.featured ? 2 : 0) + (meta.isNewArrival ? 1 : 0);
+        };
+        return score(b) - score(a);
+      });
     }
 
     return result;

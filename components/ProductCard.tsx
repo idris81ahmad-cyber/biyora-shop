@@ -9,6 +9,7 @@ import { productImageAlt } from "@/lib/image-blur";
 import { Product } from "@/types/product";
 import { addToCartWithFeedback } from "@/lib/add-to-cart";
 import { useUIStore } from "@/lib/ui-store";
+import { readCatalogMeta } from "@/lib/catalog-meta";
 
 interface ProductCardProps {
   product: Product;
@@ -20,6 +21,7 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
   const setQuickViewProduct = useUIStore((s) => s.setQuickViewProduct);
   const displayPrice = product.salePrice || product.price;
   const hasSale = !!product.salePrice;
+  const meta = readCatalogMeta(product);
 
   const handleQuickAdd = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
@@ -66,6 +68,16 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
             {hasSale && (
               <div className="sale-badge bg-[#6B2D3C] text-white text-[10px] px-3.5 py-1 rounded-full font-medium tracking-[1px]">
                 SALE
+              </div>
+            )}
+            {meta.featured && (
+              <div className="bg-[#C5A46E] text-[#2C2522] text-[10px] px-3 py-1 rounded-full font-medium tracking-[1px]">
+                FEATURED
+              </div>
+            )}
+            {meta.isNewArrival && !meta.featured && (
+              <div className="bg-white/90 text-[#2C2522] text-[10px] px-3 py-1 rounded-full font-medium tracking-[1px]">
+                NEW
               </div>
             )}
             <StockBadge inStock={product.inStock} />

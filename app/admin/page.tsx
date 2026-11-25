@@ -12,6 +12,15 @@ import ProductManager from "@/components/admin/ProductManager";
 import OrderManager from "@/components/admin/OrderManager";
 import AdminAnalytics from "@/components/admin/AdminAnalytics";
 import ReviewManager from "@/components/admin/ReviewManager";
+import SellerDesk from "@/components/admin/SellerDesk";
+import { FABRIC_PRESETS } from "@/lib/fabric-presets";
+import { CSV_TEMPLATE } from "@/lib/csv-products";
+import {
+  HOUSE_SELLER_ID,
+  isLowStock,
+  readCatalogMeta,
+  type FabricVariant,
+} from "@/lib/catalog-meta";
 
 interface ProductForm {
   name: string;
@@ -26,8 +35,19 @@ interface ProductForm {
   lengthOptions: string[];
   specifications: Record<string, string>;
   images: string[];
+  imageNotes: string[];
   rating: number;
   reviewCount: number;
+  listingStatus: "draft" | "published";
+  featured: boolean;
+  isNewArrival: boolean;
+  composition: string;
+  careInstructions: string;
+  originStory: string;
+  seoTitle: string;
+  seoDescription: string;
+  lowStockThreshold: number;
+  variants: FabricVariant[];
 }
 
 const emptyForm: ProductForm = {
@@ -42,8 +62,19 @@ const emptyForm: ProductForm = {
   lengthOptions: ["5 yards", "6 yards"],
   specifications: { "Material": "100% Cotton", "Origin": "Nigeria" },
   images: [],
+  imageNotes: [],
   rating: 4.7,
   reviewCount: 50,
+  listingStatus: "published",
+  featured: false,
+  isNewArrival: true,
+  composition: "100% Cotton",
+  careInstructions: "",
+  originStory: "Selected in Kantin Kwari, Kano.",
+  seoTitle: "",
+  seoDescription: "",
+  lowStockThreshold: 10,
+  variants: [],
 };
 
 export default function AdminDashboard() {
@@ -63,7 +94,9 @@ export default function AdminDashboard() {
   const [dragActive, setDragActive] = useState(false);
   const [storageReady, setStorageReady] = useState(true);
 
-  const [activeTab, setActiveTab] = useState<"products" | "orders" | "reviews">("products");
+  const [activeTab, setActiveTab] = useState<"products" | "orders" | "reviews" | "sellers">("products");
+  const [csvText, setCsvText] = useState(CSV_TEMPLATE);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     if (status === "loading") return;
@@ -118,6 +151,7 @@ export default function AdminDashboard() {
   };
 
   const openEdit = (product: Product) => {
+    const meta = readCatalogMeta(product);
     setEditingProduct(product);
     setForm({
       name: product.name,
@@ -130,10 +164,23 @@ export default function AdminDashboard() {
       colorFamily: product.colorFamily,
       patternStyle: product.patternStyle,
       lengthOptions: [...product.lengthOptions],
-      specifications: { ...product.specifications },
+      specifications: Object.fromEntries(
+        Object.entries(product.specifications || {}).filter(([key]) => !key.startsWith("__")),
+      ),
       images: [...product.images],
+      imageNotes: [...meta.imageNotes],
       rating: product.rating,
       reviewCount: product.reviewCount,
+      listingStatus: meta.listingStatus,
+      featured: meta.featured,
+      isNewArrival: meta.isNewArrival,
+      composition: meta.composition,
+      careInstructions: product.careInstructions || product.specifications?.Care || "",
+      originStory: product.originStory || product.specifications?.["Artisan note"] || "",
+      seoTitle: meta.seoTitle,
+      seoDescription: meta.seoDescription,
+      lowStockThreshold: meta.lowStockThreshold,
+      variants: meta.variants.map((variant) => ({ ...variant })),
     });
     setNewImageUrl("");
     setNewSpecKey("");
@@ -152,12 +199,16 @@ export default function AdminDashboard() {
       toast.info("Image already added");
       return;
     }
-    setForm({ ...form, images: [...form.images, url.trim()] });
+    setForm({ ...form, images: [...form.images, url.trim()], imageNotes: [...form.imageNotes, form.images.length === 0 ? "Main" : "Detail"] });
     setNewImageUrl("");
   };
 
   const removeImage = (index: number) => {
-    setForm({ ...form, images: form.images.filter((_, i) => i !== index) });
+    setForm({
+      ...form,
+      images: form.images.filter((_, i) => i !== index),
+      imageNotes: form.imageNotes.filter((_, i) => i !== index),
+    });
   };
 
   const uploadImageFile = async (file: File) => {
@@ -260,8 +311,8 @@ export default function AdminDashboard() {
       toast.error("Name and short description are required");
       return;
     }
-    if (form.images.length === 0) {
-      toast.error("Add at least one image");
+    if (form.listingStatus !== "draft" && form.images.length === 0) {
+      toast.error("Add at least one image, or save as a draft");
       return;
     }
     if (form.images.some((img) => img.startsWith("data:"))) {
@@ -273,8 +324,18 @@ export default function AdminDashboard() {
 
     setSaving(true);
 
-    const payload: ProductForm & { slug: string } = {
+    const payload = {
       ...form,
+      images: form.images.length ? form.images : ["/images/ankara-premium.jpg"],
+      sellerId: editingProduct?.sellerId || HOUSE_SELLER_ID,
+      sellerName: editingProduct?.sellerName || "BIYORA SHOP",
+      moderation: editingProduct?.moderation || "approved",
+      specifications: {
+        ...form.specifications,
+        ...(form.composition ? { Material: form.composition } : {}),
+        ...(form.careInstructions ? { Care: form.careInstructions } : {}),
+        ...(form.originStory ? { "Artisan note": form.originStory } : {}),
+      },
       slug: editingProduct?.slug || form.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""),
     };
 
@@ -312,6 +373,58 @@ export default function AdminDashboard() {
     }
   };
 
+  const applyPreset = (id: string) => {
+    const preset = FABRIC_PRESETS.find((item) => item.id === id);
+    if (!preset) return;
+    setForm((current) => ({
+      ...current,
+      category: preset.category,
+      lengthOptions: [...preset.lengths],
+      patternStyle: preset.patternStyle,
+      colorFamily: preset.colorFamily,
+      composition: preset.composition,
+      careInstructions: preset.care,
+      originStory: preset.originNote,
+      specifications: {
+        ...current.specifications,
+        Material: preset.composition,
+        Origin: preset.origin,
+        Care: preset.care,
+        Opacity: preset.opacity,
+        Width: preset.width,
+      },
+    }));
+    toast.success(`${preset.label} template applied`);
+  };
+
+  const importCsv = async () => {
+    setImporting(true);
+    try {
+      const res = await fetch("/api/admin/products/import", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ csv: csvText }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Import failed");
+      const skipped = Array.isArray(data.errors) ? data.errors.length : 0;
+      toast.success(`Imported ${data.created} fabric${data.created === 1 ? "" : "s"}${skipped ? ` · ${skipped} row skipped` : ""}`);
+      await loadProducts();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const updateVariant = (index: number, patch: Partial<FabricVariant>) => {
+    setForm((current) => ({
+      ...current,
+      variants: current.variants.map((variant, i) => (i === index ? { ...variant, ...patch } : variant)),
+    }));
+  };
+
   const handleReset = async () => {
     if (!confirm("Reset all products to defaults?")) return;
     try {
@@ -330,7 +443,7 @@ export default function AdminDashboard() {
   const avgRating = totalProducts > 0
     ? (products.reduce((s, p) => s + p.rating, 0) / totalProducts).toFixed(1)
     : "0";
-  const lowStockProducts = products.filter((p) => p.inStock > 0 && p.inStock <= 10);
+  const lowStockProducts = products.filter((p) => isLowStock(p));
   const outOfStockProducts = products.filter((p) => p.inStock <= 0);
 
   return (
@@ -385,6 +498,12 @@ export default function AdminDashboard() {
         >
           Reviews
         </button>
+        <button
+          onClick={() => setActiveTab("sellers")}
+          className={`px-5 py-2 rounded-xl text-sm font-medium transition ${activeTab === "sellers" ? "bg-[#6B2D3C] text-white" : "border border-[#D4C9B8] hover:bg-white/50"}`}
+        >
+          Sellers
+        </button>
       </div>
 
       <div className="flex items-center justify-between mb-8">
@@ -395,14 +514,18 @@ export default function AdminDashboard() {
               ? "Product Management"
               : activeTab === "orders"
                 ? "Order Management"
-                : "Review Moderation"}
+                : activeTab === "sellers"
+                  ? "Sellers"
+                  : "Review Moderation"}
           </h1>
           <p className="text-[#6B5F54] mt-1">
             {activeTab === "products"
-              ? "Full CRUD • Image management • Live updates to shop"
+              ? "Drafts, templates, CSV import, and Kwari review"
               : activeTab === "orders"
                 ? "View orders • Update status • Track fulfilment"
-                : "Approve or reject customer product reviews"}
+                : activeTab === "sellers"
+                  ? "Approve sellers later without opening the shop to everyone today"
+                  : "Approve or reject customer product reviews"}
             </p>
         </div>
 
@@ -439,6 +562,12 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {activeTab === "sellers" && (
+        <div className="mb-10">
+          <SellerDesk products={products} />
+        </div>
+      )}
+
       {activeTab === "products" && (
         <>
           {(lowStockProducts.length > 0 || outOfStockProducts.length > 0) && (
@@ -457,7 +586,7 @@ export default function AdminDashboard() {
                       </span>
                     )}
                     {lowStockProducts.length > 0 && (
-                      <span>{lowStockProducts.length} low stock (≤10 units)</span>
+                      <span>{lowStockProducts.length} low stock</span>
                     )}
                   </p>
                   <ul className="mt-2 space-y-0.5 text-xs text-amber-900/80 max-h-24 overflow-y-auto">
@@ -478,7 +607,7 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-white border border-[#D4C9B8] rounded-2xl p-6">
               <div className="text-sm text-[#6B5F54]">Total Fabrics</div>
               <div className="text-4xl font-semibold mt-1 tracking-tight">{totalProducts}</div>
@@ -507,6 +636,23 @@ export default function AdminDashboard() {
               <div className="text-4xl font-semibold mt-1 tracking-tight">{avgRating}</div>
             </div>
           </div>
+
+          <details className="mb-8 bg-white border border-[#D4C9B8] rounded-3xl p-5">
+            <summary className="cursor-pointer font-medium">Bulk CSV import</summary>
+            <p className="text-sm text-[#6B5F54] mt-2">
+              Header row required. Lengths use a pipe, for example <span className="font-mono">5 yards|6 yards</span>.
+              New rows publish as BIYORA house stock. Add photos in full edit after import.
+            </p>
+            <textarea
+              value={csvText}
+              onChange={(e) => setCsvText(e.target.value)}
+              rows={6}
+              className="mt-3 w-full font-mono text-xs rounded-2xl border border-[#D4C9B8] p-3"
+            />
+            <button type="button" onClick={importCsv} disabled={importing} className="mt-3 btn-primary px-5 py-2 rounded-xl text-sm disabled:opacity-60">
+              {importing ? "Importing…" : "Import fabrics"}
+            </button>
+          </details>
 
           {loading ? (
             <div className="bg-white border border-[#D4C9B8] rounded-3xl p-12 text-center text-[#6B5F54]">
@@ -552,7 +698,70 @@ export default function AdminDashboard() {
                     {categories.filter(c => c !== "All Categories").map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
+              </div>
 
+              <div>
+                <div className="text-sm text-[#6B5F54] mb-2">Fabric template</div>
+                <div className="flex flex-wrap gap-2">
+                  {FABRIC_PRESETS.map((preset) => (
+                    <button
+                      type="button"
+                      key={preset.id}
+                      onClick={() => applyPreset(preset.id)}
+                      className="text-xs px-3 py-1.5 rounded-full border border-[#D4C9B8] hover:bg-[#F8F4EC]"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <label className="text-sm text-[#6B5F54]">
+                  Visibility
+                  <select
+                    value={form.listingStatus}
+                    onChange={(e) => setForm({ ...form, listingStatus: e.target.value as "draft" | "published" })}
+                    className="mt-1 input-premium w-full rounded-2xl px-4 py-3"
+                  >
+                    <option value="published">Published</option>
+                    <option value="draft">Draft</option>
+                  </select>
+                </label>
+                <label className="text-sm text-[#6B5F54] flex items-end gap-2 pb-3">
+                  <input type="checkbox" checked={form.featured} onChange={(e) => setForm({ ...form, featured: e.target.checked })} />
+                  Featured
+                </label>
+                <label className="text-sm text-[#6B5F54] flex items-end gap-2 pb-3">
+                  <input type="checkbox" checked={form.isNewArrival} onChange={(e) => setForm({ ...form, isNewArrival: e.target.checked })} />
+                  New arrival
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label className="text-sm text-[#6B5F54]">Composition
+                  <input value={form.composition} onChange={(e) => setForm({ ...form, composition: e.target.value })} className="mt-1 input-premium w-full rounded-2xl px-4 py-3" placeholder="100% cotton wax" />
+                </label>
+                <label className="text-sm text-[#6B5F54]">Low-stock alert at
+                  <input type="number" value={form.lowStockThreshold} onChange={(e) => setForm({ ...form, lowStockThreshold: parseInt(e.target.value, 10) || 10 })} className="mt-1 input-premium w-full rounded-2xl px-4 py-3" />
+                </label>
+              </div>
+              <label className="block text-sm text-[#6B5F54]">Care instructions
+                <textarea value={form.careInstructions} onChange={(e) => setForm({ ...form, careInstructions: e.target.value })} rows={2} className="mt-1 input-premium w-full rounded-2xl px-4 py-3" />
+              </label>
+              <label className="block text-sm text-[#6B5F54]">Origin note
+                <textarea value={form.originStory} onChange={(e) => setForm({ ...form, originStory: e.target.value })} rows={2} className="mt-1 input-premium w-full rounded-2xl px-4 py-3" />
+              </label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label className="text-sm text-[#6B5F54]">SEO title
+                  <input value={form.seoTitle} onChange={(e) => setForm({ ...form, seoTitle: e.target.value })} className="mt-1 input-premium w-full rounded-2xl px-4 py-3" />
+                </label>
+                <label className="text-sm text-[#6B5F54]">SEO description
+                  <input value={form.seoDescription} onChange={(e) => setForm({ ...form, seoDescription: e.target.value })} className="mt-1 input-premium w-full rounded-2xl px-4 py-3" />
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div>
                   <label className="text-sm text-[#6B5F54] block mb-1.5">Price (₦) *</label>
                   <input type="number" value={form.price} onChange={e => setForm({ ...form, price: parseInt(e.target.value) || 0 })} className="input-premium w-full rounded-2xl px-4 py-3" required />
@@ -576,6 +785,9 @@ export default function AdminDashboard() {
               {/* Image Upload Section */}
               <div>
                 <label className="text-sm text-[#6B5F54] block mb-2">Images</label>
+                <p className="text-xs text-[#6B5F54] mb-2">
+                  First image is the shop card. Then add a texture close-up and a print detail. JPG, PNG, or WebP, up to 8MB. Daylight, no heavy filters.
+                </p>
 
                 {/* Clickable + Drag & Drop Zone */}
                 <div
@@ -626,10 +838,59 @@ export default function AdminDashboard() {
                         <button type="button" onClick={() => removeImage(idx)} className="absolute top-1 right-1 bg-white/90 text-red-600 text-xs px-2 py-0.5 rounded hover:bg-red-50">
                           ×
                         </button>
+                        <select
+                          value={form.imageNotes[idx] || "Detail"}
+                          onChange={(e) => {
+                            const imageNotes = [...form.imageNotes];
+                            imageNotes[idx] = e.target.value;
+                            setForm({ ...form, imageNotes });
+                          }}
+                          className="absolute bottom-1 left-1 right-1 text-[10px] bg-white/90 rounded"
+                        >
+                          {["Main", "Texture", "Print", "Width", "Detail"].map((note) => (
+                            <option key={note}>{note}</option>
+                          ))}
+                        </select>
                       </div>
                     ))}
                   </div>
                 )}
+              </div>
+
+              <div className="rounded-2xl border border-[#D4C9B8] p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium">Prices per yard</div>
+                    <p className="text-xs text-[#6B5F54]">Optional. A length is then priced as yards times the yard price.</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-xs px-3 py-1.5 rounded-full border"
+                    onClick={() => setForm({
+                      ...form,
+                      variants: [
+                        ...form.variants,
+                        {
+                          color: form.colorFamily || "As shown",
+                          length: form.lengthOptions[0] || "6 yards",
+                          pricePerYard: Math.max(1, Math.round(form.price / 6)),
+                          stock: form.inStock,
+                        },
+                      ],
+                    })}
+                  >
+                    Add variant
+                  </button>
+                </div>
+                {form.variants.map((variant, index) => (
+                  <div key={`${variant.length}-${index}`} className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                    <input value={variant.color} onChange={(e) => updateVariant(index, { color: e.target.value })} className="input-premium rounded-xl px-3 py-2 text-sm" placeholder="Colour" />
+                    <input value={variant.length} onChange={(e) => updateVariant(index, { length: e.target.value })} className="input-premium rounded-xl px-3 py-2 text-sm" placeholder="6 yards" />
+                    <input type="number" value={variant.pricePerYard} onChange={(e) => updateVariant(index, { pricePerYard: Number(e.target.value) })} className="input-premium rounded-xl px-3 py-2 text-sm" placeholder="₦ / yard" />
+                    <input type="number" value={variant.stock} onChange={(e) => updateVariant(index, { stock: Number(e.target.value) })} className="input-premium rounded-xl px-3 py-2 text-sm" placeholder="Stock" />
+                    <button type="button" className="text-sm text-red-600" onClick={() => setForm({ ...form, variants: form.variants.filter((_, i) => i !== index) })}>Remove</button>
+                  </div>
+                ))}
               </div>
 
               <div>
@@ -655,7 +916,7 @@ export default function AdminDashboard() {
               <div>
                 <label className="text-sm text-[#6B5F54] block mb-1.5">Specifications</label>
                 <div className="space-y-1 mb-2 text-sm">
-                  {Object.entries(form.specifications).map(([k, v]) => (
+                  {Object.entries(form.specifications).filter(([k]) => !k.startsWith("__")).map(([k, v]) => (
                     <div key={k} className="flex justify-between border rounded-xl px-3 py-1.5 bg-[#F8F4EC]">
                       <span><strong>{k}:</strong> {v}</span>
                       <button type="button" onClick={() => removeSpec(k)} className="text-red-500">×</button>

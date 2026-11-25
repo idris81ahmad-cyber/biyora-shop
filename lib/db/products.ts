@@ -3,6 +3,7 @@ import { getDb, schema } from "./index";
 import type { Product } from "@/types/product";
 import { logger } from "@/lib/logger";
 import { hydrateProduct } from "@/lib/product-education";
+import { persistCatalogFields } from "@/lib/catalog-meta";
 
 function rowToProduct(row: typeof schema.products.$inferSelect): Product {
   return hydrateProduct({
@@ -54,22 +55,23 @@ export async function upsertProductInDb(product: Product): Promise<Product | nul
   const db = getDb();
   if (!db) return null;
   try {
+    const packed = persistCatalogFields(product);
     const values = {
-      slug: product.slug,
-      name: product.name,
-      category: product.category,
-      price: product.price,
-      salePrice: product.salePrice ?? null,
-      images: product.images,
-      rating: product.rating,
-      reviewCount: product.reviewCount,
-      shortDescription: product.shortDescription,
-      description: product.description,
-      inStock: product.inStock,
-      colorFamily: product.colorFamily,
-      patternStyle: product.patternStyle,
-      lengthOptions: product.lengthOptions,
-      specifications: product.specifications,
+      slug: packed.slug,
+      name: packed.name,
+      category: packed.category,
+      price: packed.price,
+      salePrice: packed.salePrice ?? null,
+      images: packed.images,
+      rating: packed.rating,
+      reviewCount: packed.reviewCount,
+      shortDescription: packed.shortDescription,
+      description: packed.description,
+      inStock: packed.inStock,
+      colorFamily: packed.colorFamily,
+      patternStyle: packed.patternStyle,
+      lengthOptions: packed.lengthOptions,
+      specifications: packed.specifications,
       updatedAt: new Date(),
     };
 

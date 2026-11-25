@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { CartItem, Product } from "@/types/product";
+import { unitPriceForSelection } from "@/lib/catalog-meta";
 
 interface CartStore {
   items: CartItem[];
@@ -20,7 +21,7 @@ export const useCartStore = create<CartStore>()(
 
       addToCart: (product, selectedLength, quantity = 1) => {
         const qty = Math.max(1, Math.floor(Number(quantity) || 1));
-        const currentPrice = product.salePrice || product.price;
+        const currentPrice = unitPriceForSelection(product, selectedLength);
         set((state) => {
           const existingItem = state.items.find(
             (item) => item.id === product.id && item.selectedLength === selectedLength

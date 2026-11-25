@@ -63,7 +63,7 @@ export default function ProductEducation({ product }: { product: Product }) {
   ].filter((f) => f.value);
 
   const remainingSpecs = Object.entries(p.specifications || {}).filter(
-    ([key]) => !FEATURED_SET.has(key),
+    ([key]) => !FEATURED_SET.has(key) && !key.startsWith("__"),
   );
 
   return (
