@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import ProductImage from "@/components/ProductImage";
 import { useRouter } from "next/navigation";
@@ -21,6 +21,10 @@ import StockBadge from "@/components/StockBadge";
 import ShareFabric from "@/components/ShareFabric";
 import { ProductTrustStrip, PaymentBadges } from "@/components/TrustSignals";
 import PageSkeleton from "@/components/PageSkeleton";
+import ShippingEstimator from "@/components/ShippingEstimator";
+import VariantPicker from "@/components/VariantPicker";
+import { readCatalogMeta } from "@/lib/catalog-meta";
+import { siteConfig } from "@/lib/site";
 
 interface ProductDetailPageProps {
   params: Promise<{ slug: string }>;
@@ -78,13 +82,21 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
 }
 
 function ProductDetailClient({ product, relatedProducts }: { product: Product; relatedProducts: Product[] }) {
+  const meta = readCatalogMeta(product);
   const [selectedLength, setSelectedLength] = useState(product.lengthOptions[0]);
+  const [unitPrice, setUnitPrice] = useState(product.salePrice || product.price);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+  const onSelection = useCallback((selection: { length: string; unitPrice: number }) => {
+    setSelectedLength(selection.length);
+    setUnitPrice(selection.unitPrice);
+  }, []);
 
-  const currentPrice = product.salePrice || product.price;
+  const currentPrice = unitPrice;
   const totalPrice = currentPrice * quantity;
+  const whatsappText = `Hello BIYORA SHOP — I want to ask about ${product.name} (${product.category}).`;
+  const whatsappHref = `https://wa.me/${siteConfig.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(whatsappText)}`;
 
   const handleAddToCart = (e?: React.MouseEvent<HTMLButtonElement>) => {
     addToCartWithFeedback({
@@ -131,6 +143,11 @@ function ProductDetailClient({ product, relatedProducts }: { product: Product; r
                 className={`gallery-thumb relative w-20 h-20 rounded-2xl overflow-hidden border-2 transition ${selectedImageIndex === idx ? 'active border-[#6B2D3C]' : 'border-transparent hover:border-[#D4C9B8]'}`}
               >
                 <ProductImage src={img} alt={productImageAlt(product.name, product.category, idx)} fill sizes="80px" />
+                {meta.imageNotes[idx] && (
+                  <span className="absolute bottom-0 inset-x-0 bg-black/55 text-white text-[9px] tracking-wide text-center py-0.5">
+                    {meta.imageNotes[idx]}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -140,6 +157,16 @@ function ProductDetailClient({ product, relatedProducts }: { product: Product; r
           <div className="flex items-start justify-between">
             <div>
               <div className="uppercase tracking-[2px] text-xs text-[#C5A46E]">{product.category}</div>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <span className="text-[10px] tracking-wide uppercase px-2 py-1 rounded-full bg-[#2C2522] text-[#F4EDE3]">
+                  Kantin Kwari
+                </span>
+                {meta.featured && <span className="text-[10px] uppercase px-2 py-1 rounded-full bg-[#C5A46E] text-[#2C2522]">Featured</span>}
+                {meta.isNewArrival && <span className="text-[10px] uppercase px-2 py-1 rounded-full border border-[#D4C9B8]">New arrival</span>}
+                {meta.sellerId !== "biyora" && meta.moderation === "approved" && (
+                  <span className="text-[10px] uppercase px-2 py-1 rounded-full border border-[#D4C9B8]">Kwari-approved seller</span>
+                )}
+              </div>
               <h1 className="text-5xl tracking-[-1.8px] font-semibold leading-none mt-1 mb-3">{product.name}</h1>
             </div>
             <WishlistButton product={product} />
@@ -162,31 +189,17 @@ function ProductDetailClient({ product, relatedProducts }: { product: Product; r
                 </>
               )}
             </div>
-            <div className="text-sm text-[#6B5F54]">per piece • prices vary by length selected</div>
+            <div className="text-sm text-[#6B5F54]">per piece{meta.variants.length ? " · price follows the length you pick" : ""}</div>
           </div>
 
+          <VariantPicker product={product} onChange={onSelection} />
+
           <div className="mb-8">
-            <div className="text-xs tracking-[2px] text-[#6B5F54] mb-3">SELECT LENGTH</div>
-            <div className="flex flex-wrap gap-3">
-              {product.lengthOptions.map((length) => (
-                <button
-                  key={length}
-                  onClick={() => setSelectedLength(length)}
-                  className={`length-btn px-8 py-3.5 rounded-2xl border text-sm font-medium transition-all ${selectedLength === length ? 'active border-[#6B2D3C] bg-[#6B2D3C] text-white' : 'border-[#D4C9B8] hover:bg-white'}`}
-                >
-                  {length}
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-[#6B5F54] mt-2">
-              Most popular: 6 yards for full traditional outfits.{" "}
-              <FabricCalculatorCta
-                productName={product.name}
-                category={product.category}
-                variant="compact"
-                className="inline-flex align-baseline"
-              />
-            </p>
+            <FabricCalculatorCta
+              productName={product.name}
+              category={product.category}
+              variant="compact"
+            />
           </div>
 
           <div className="flex items-center gap-4 mb-8">
@@ -244,6 +257,20 @@ function ProductDetailClient({ product, relatedProducts }: { product: Product; r
           </div>
 
           <ProductTrustStrip className="mb-4" />
+          <div className="space-y-3 mb-4">
+            <ShippingEstimator subtotal={totalPrice} />
+            <a
+              href={whatsappHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center w-full rounded-2xl border border-[#25D366] text-[#128C7E] px-4 py-3 text-sm font-medium hover:bg-[#25D366]/10"
+            >
+              Ask about this fabric on WhatsApp
+            </a>
+            <Link href="/faq" className="text-xs text-[#6B5F54] underline">
+              Returns: {siteConfig.returnPolicyDays} days if the cloth is unused
+            </Link>
+          </div>
           <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
             <PaymentBadges />
             <ShareFabric name={product.name} slug={product.slug} />

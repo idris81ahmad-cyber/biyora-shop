@@ -141,6 +141,10 @@ export interface OrderItemJson {
   quantity: number;
   unitPrice: number;
   lineTotal: number;
+  sellerId?: string;
+  sellerName?: string;
+  commissionPercent?: number;
+  commissionAmount?: number;
 }
 
 export interface ShippingJson {

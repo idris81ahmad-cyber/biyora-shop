@@ -2,6 +2,7 @@ import type { Product } from "@/types/product";
 import { useCartStore } from "@/lib/cart-store";
 import { useUIStore } from "@/lib/ui-store";
 import { toast } from "sonner";
+import { unitPriceForSelection } from "@/lib/catalog-meta";
 
 interface AddToCartOptions {
   product: Product;
@@ -23,7 +24,7 @@ export function addToCartWithFeedback({
   const selectedLength = length ?? product.lengthOptions[0];
   const { addToCart } = useCartStore.getState();
   const { triggerFlyToCart, setCartDrawerOpen } = useUIStore.getState();
-  const price = product.salePrice || product.price;
+  const price = unitPriceForSelection(product, selectedLength);
 
   for (let i = 0; i < quantity; i++) {
     addToCart(product, selectedLength);

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import NewsletterForm from "@/components/NewsletterForm";
 import Image from "next/image";
 import { fabricCategories, categoryShopHref } from "@/lib/products";
 import { siteConfig } from "@/lib/site";
@@ -51,6 +52,7 @@ export default function Footer() {
             <Link href="/sourcing" className="block hover:text-[#C5A46E] transition">Our Sourcing</Link>
             <Link href="/journal" className="block hover:text-[#C5A46E] transition">Fabric Journal</Link>
             <Link href="/wholesale" className="block hover:text-[#C5A46E] transition">Wholesale / B2B</Link>
+            <Link href="/sell" className="block hover:text-[#C5A46E] transition">Sell on BIYORA</Link>
             <Link href="/calculator" className="block hover:text-[#C5A46E] transition">Fabric Calculator</Link>
             <Link href="/contact" className="block hover:text-[#C5A46E] transition">Contact Us</Link>
             <Link href="/faq" className="block hover:text-[#C5A46E] transition">FAQ &amp; Returns</Link>
@@ -86,6 +88,7 @@ export default function Footer() {
               Authenticity
             </Link>
           </div>
+          <NewsletterForm />
         </div>
       </div>
 

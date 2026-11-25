@@ -6,6 +6,11 @@
 import type { OrderItemJson } from "@/lib/db/schema";
 import type { Product } from "@/types/product";
 import { getProducts } from "@/lib/products-store";
+import {
+  readCatalogMeta,
+  unitPriceForSelection,
+  variantStock,
+} from "@/lib/catalog-meta";
 
 export type PricedCartResult =
   | {
@@ -91,23 +96,33 @@ export function priceCartAgainstCatalog(
       };
     }
 
-    if (product.inStock <= 0) {
+    const length =
+      (typeof raw.selectedLength === "string" && raw.selectedLength.trim()) ||
+      product.lengthOptions?.[0] ||
+      "5 yards";
+
+    const color = typeof (raw as { color?: string }).color === "string"
+      ? (raw as { color?: string }).color
+      : undefined;
+
+    const variantQty = variantStock(product, length, color);
+    const available = variantQty === undefined ? product.inStock : Math.min(product.inStock, variantQty);
+    if (available <= 0) {
       return {
         ok: false,
         error: `${product.name} is out of stock`,
         code: "out_of_stock",
       };
     }
-
-    if (quantity > product.inStock) {
+    if (quantity > available) {
       return {
         ok: false,
-        error: `Only ${product.inStock} of ${product.name} available`,
+        error: `Only ${available} of ${product.name} available`,
         code: "out_of_stock",
       };
     }
 
-    const unitPrice = catalogUnitPrice(product);
+    const unitPrice = unitPriceForSelection(product, length, color);
     if (unitPrice <= 0) {
       return {
         ok: false,
@@ -116,20 +131,11 @@ export function priceCartAgainstCatalog(
       };
     }
 
-    const length =
-      (typeof raw.selectedLength === "string" && raw.selectedLength.trim()) ||
-      product.lengthOptions?.[0] ||
-      "5 yards";
-
-    if (
-      product.lengthOptions?.length &&
-      !product.lengthOptions.some((l) => l.toLowerCase() === length.toLowerCase())
-    ) {
-      // Soft accept: some carts store free-text length; still price from catalog
-    }
-
     const lineTotal = unitPrice * quantity;
     subtotal += lineTotal;
+    const meta = readCatalogMeta(product);
+    const commissionPercent = meta.commissionPercent;
+    const commissionAmount = Math.round((lineTotal * commissionPercent) / 100);
 
     priced.push({
       productId: product.id,
@@ -141,6 +147,10 @@ export function priceCartAgainstCatalog(
       quantity,
       unitPrice,
       lineTotal,
+      sellerId: meta.sellerId,
+      sellerName: meta.sellerName,
+      commissionPercent,
+      commissionAmount,
     });
   }
 

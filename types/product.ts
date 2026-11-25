@@ -29,6 +29,23 @@ export interface Product {
   bestUses?: string[];
   /** Short origin / artisan story */
   originStory?: string;
+  /** draft stays off the shop until you publish */
+  listingStatus?: "draft" | "published";
+  featured?: boolean;
+  isNewArrival?: boolean;
+  /** Fibre content, e.g. 100% cotton wax */
+  composition?: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  variants?: import("@/lib/catalog-meta").FabricVariant[];
+  sellerId?: string;
+  sellerName?: string;
+  moderation?: "approved" | "pending" | "rejected";
+  lowStockThreshold?: number;
+  /** Caption per gallery image: Main, Texture, Print… */
+  imageNotes?: string[];
+  /** Fee kept back for this seller on each sale. House stock is 0. */
+  commissionPercent?: number;
 }
 
 export interface CartItem extends Product {

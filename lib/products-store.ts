@@ -18,6 +18,7 @@ import {
 import { seedProducts } from "@/lib/db/seed";
 import { getDefaultProducts } from "@/lib/products-defaults";
 import { logger } from "@/lib/logger";
+import { liftCatalogMeta, persistCatalogFields } from "@/lib/catalog-meta";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const PRODUCTS_FILE = path.join(DATA_DIR, "products.json");
@@ -163,6 +164,11 @@ async function withTimeout<T>(promise: Promise<T>, fallback: T): Promise<T> {
  * During production builds, uses fast legacy/default fallback to avoid Vercel timeouts.
  */
 export async function getProducts(): Promise<Product[]> {
+  const products = await loadProducts();
+  return products.map((product) => liftCatalogMeta(product));
+}
+
+async function loadProducts(): Promise<Product[]> {
   if (isProductionBuild()) {
     const legacy = await withTimeout(getProductsLegacy(), getDefaultProducts());
     return legacy.length > 0 ? legacy : getDefaultProducts();
@@ -250,16 +256,16 @@ export async function addProduct(
   product: Omit<Product, "id"> & { id?: number }
 ): Promise<Product> {
   if (hasDatabase()) {
-    const dbResult = await upsertProductInDb(product as Product);
+    const dbResult = await upsertProductInDb(persistCatalogFields(product as Product));
     if (dbResult) return dbResult;
   }
 
   const all = await getProducts();
   const newId = product.id || Math.max(0, ...all.map((p) => p.id)) + 1;
-  const newProduct: Product = {
+  const newProduct = persistCatalogFields({
     ...product,
     id: newId,
-  } as Product;
+  } as Product);
   all.push(newProduct);
   await saveProducts(all);
   return newProduct;
@@ -276,7 +282,7 @@ export async function updateProduct(
     const current = await getProducts();
     const existing = current.find((p) => p.id === id);
     if (existing) {
-      const updated = { ...existing, ...updates } as Product;
+      const updated = persistCatalogFields({ ...existing, ...updates } as Product);
       const dbResult = await upsertProductInDb(updated);
       if (dbResult) return dbResult;
     }
@@ -286,7 +292,7 @@ export async function updateProduct(
   const index = all.findIndex((p) => p.id === id);
   if (index === -1) return null;
 
-  const updated = { ...all[index], ...updates } as Product;
+  const updated = persistCatalogFields({ ...all[index], ...updates } as Product);
   all[index] = updated;
   await saveProducts(all);
   return updated;
